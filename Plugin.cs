@@ -1,16 +1,17 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.Localization.Components;
+using UnityEngine.Localization.Settings;
+using UnityEngine.SceneManagement;
 
 namespace CustomMaps
 {
-
-    // Here are some basic resources on code style and naming conventions to help
-    // you in your first CSharp plugin!
-    // https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
-    // https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/identifier-names
-    // https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/names-of-namespaces
-
     // This BepInAutoPlugin attribute comes from the Hamunii.BepInEx.AutoPlugin
     // NuGet package, and it will generate the BepInPlugin attribute for you!
     // For more info, see https://github.com/Hamunii/BepInEx.AutoPlugin
@@ -18,24 +19,43 @@ namespace CustomMaps
     public partial class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log { get; private set; } = null!;
+        public static Plugin? Instance { get; private set; }
+
+        //for the menu to have the custom tab with names
+        public static CourseData CustomCourse { get; set; } = null!;
+        public static Dictionary<string, string> CustomLocalizedStrings = new Dictionary<string, string>();
+
+        //stuff cached for reuse
+        public static UnityEngine.Rendering.PostProcessing.PostProcessResources? CachedPostProcessResources;
+        public static Dictionary<string, TMPro.TMP_FontAsset> CachedFonts = new Dictionary<string, TMPro.TMP_FontAsset>();
+        public static object? CachedPropData = null;
+        public static object? CachedKeywordSO = null;
+        public static object? CachedTemplateMaterial = null;
+        public static Dictionary<string, Material> CachedMaterials = new Dictionary<string, Material>();
+        public static Dictionary<string, Shader> CachedShaders = new Dictionary<string, Shader>();
+
+        //for loading custom scenes
+        public static List<string> ScenePaths = new List<string>();
+        public static List<string> SceneGuids = new List<string>();
+        
 
         private void Awake()
         {
-            // BepInEx gives us a logger which we can use to log information.
-            // See https://lethal.wiki/dev/fundamentals/logging
+            Instance = this;
             Log = Logger;
-
-            // BepInEx also gives us a config file for easy configuration.
-            // See https://lethal.wiki/dev/intermediate/custom-configs
-
-            // We can apply our hooks here.
-            // See https://lethal.wiki/dev/fundamentals/patching-code
+            AssetImports.LoadScenes();
 
             var harmony = new Harmony("com.github.MasterBuilderMAC.SBGMaps");
-            harmony.PatchAll();
 
-            // Log our awake here so we can see it in LogOutput.log file
+            SceneManager.sceneLoaded += IngamePatches.OnSceneLoaded;
+
+            harmony.PatchAll();
             Log.LogInfo($"Plugin {Name} is loaded!");
         }
+
+        
+
     }
+
+
 }
