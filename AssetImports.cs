@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using static CustomMaps.GetCoursesInfo;
+using static CustomMaps.Plugin;
+using Newtonsoft.Json;
 
 namespace CustomMaps
 {
@@ -24,59 +28,168 @@ namespace CustomMaps
             );
         }
 
-        public static void LoadScenes()
+        //Loads all of the scenes and asset bundles
+        public static void LoadBundles()
         {
             string modFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 
-            /*
-            //Load testsplat for rendering/shader stuff
-            var assetBundle = AssetBundle.LoadFromFile(Path.Combine(modFolder, "Assets\\testsplat"));
-            if (assetBundle == null)
-                Plugin.Log.LogError("Asset bundle failed to load!");
-            else
+            var searchFolders = new[]
             {
-                Plugin.Log.LogDebug("Asset bundle loaded successfully");
+                Path.Combine(modFolder, "Maps")
+            };
 
-                foreach (var name in assetBundle.GetAllAssetNames())
-                {
-                    Plugin.Log.LogDebug("Asset in asset bundle: " + name);
-                }
-            }
-            */
-
-            //loop through each bundle and load the maps from them
-            string mapsFolder = Path.Combine(modFolder, "Maps");
-            foreach (string bundlePath in Directory.GetFiles(mapsFolder))
+            foreach (string rootFolder in searchFolders)
             {
-                var sceneBundle = AssetBundle.LoadFromFile(bundlePath);
-                if (sceneBundle == null)
+                if (!Directory.Exists(rootFolder))
                 {
-                    Plugin.Log.LogError("Scene bundle failed to load: " + bundlePath);
+                    Plugin.Log.LogWarning("Folder not found, skipping: " + rootFolder);
                     continue;
                 }
 
-                foreach (var name in sceneBundle.GetAllAssetNames())
-                {
-                    Plugin.Log.LogDebug("Asset in scene bundle: " + name);
-                }
+                // Top-level files + one level of subfolders
+                var bundlePaths = Directory.GetFiles(rootFolder)
+                    .Concat(Directory.GetDirectories(rootFolder)
+                    .SelectMany(subDir => Directory.GetFiles(subDir)))
+                    .Where(f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
 
-                string[] paths = sceneBundle.GetAllScenePaths();
-                if (paths.Length == 0)
+                foreach (string bundlePath in bundlePaths)
                 {
-                    Plugin.Log.LogDebug("Bundle has no scenes, skipping: " + bundlePath);
-                    continue;
-                }
+                    var bundle = AssetBundle.LoadFromFile(bundlePath);
+                    if (bundle == null)
+                    {
+                        Plugin.Log.LogError("Bundle failed to load: " + bundlePath);
+                        continue;
+                    }
 
-                foreach (string scenePath in paths)
-                {
-                    string guid = Guid.NewGuid().ToString("N"); // "N" format = 32 hex chars, no dashes
-                    Plugin.ScenePaths.Add(scenePath);
-                    Plugin.SceneGuids.Add(guid);
-                    Plugin.Log.LogDebug("Scene registered: " + scenePath + " guid: " + guid);
+                    string[] scenePaths = bundle.GetAllScenePaths();
+
+                    if (scenePaths.Length > 0)
+                    {
+                        // Scene bundle — register one entry per scene
+                        foreach (string scenePath in scenePaths)
+                        {
+                            string guid = Guid.NewGuid().ToString("N");
+                            string sceneName = Path.GetFileNameWithoutExtension(scenePath);
+
+                            Plugin.LoadedBundles.Add(new LoadedBundle
+                            {
+                                Bundle = bundle,
+                                ScenePath = scenePath,
+                                SceneGuid = guid
+                            });
+
+                            Plugin.SceneNameToGuid[sceneName] = guid;
+                            Plugin.SceneBundles[sceneName] = bundlePath;
+                            Plugin.Log.LogDebug($"Scene registered: {scenePath} guid: {guid}");
+                            
+                        }
+                    }
+                    else
+                    {
+                        // Asset bundle — retain it, no scene info
+                        Plugin.LoadedBundles.Add(new LoadedBundle
+                        {
+                            Bundle = bundle,
+                            ScenePath = null,
+                            SceneGuid = null
+                        });
+
+                        Plugin.Log.LogDebug("Asset bundle loaded: " + bundlePath);
+                    }
                 }
             }
-
         }
+
+    }
+
+    //Loads the configurations for the holes from the json files
+    public static class ConfigLoader
+    {
+        public static List<(string bundleFileName, BundleConfig config)> LoadAllConfigs()
+        {
+            string mapsFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Maps");
+            var results = new List<(string, BundleConfig?)>();
+
+            var bundlePaths = Directory.GetFiles(mapsFolder)
+                .Concat(Directory.GetDirectories(mapsFolder)
+                    .SelectMany(subDir => Directory.GetFiles(subDir)))
+                .Where(f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var bundlePath in bundlePaths)
+            {
+                string fileName = Path.GetFileName(bundlePath);
+                string configPath = bundlePath + ".json";
+
+                if (!File.Exists(configPath))
+                {
+                    Plugin.Log.LogWarning($"No config found for bundle: {fileName}");
+                    results.Add((fileName, null));
+                    continue;
+                }
+
+                string json = File.ReadAllText(configPath, Encoding.UTF8).TrimStart('\uFEFF');
+                BundleConfig config;
+                try
+                {
+                    config = JsonConvert.DeserializeObject<BundleConfig>(json);
+                }
+                catch (Exception e)
+                {
+                    Plugin.Log.LogError($"Failed to parse config for {fileName}: {e.Message}, using placeholder");
+                    results.Add((fileName, MakePlaceholderConfig(fileName)));
+                    continue;
+                }
+
+                if (config?.holes.Count == null || config.holes.Count == 0)
+                {
+                    Plugin.Log.LogWarning($"No holes defined in config for {fileName}, using placeholder");
+                    results.Add((fileName, MakePlaceholderConfig(fileName)));
+                    continue;
+                }
+
+                Plugin.Log.LogDebug($"Loaded config for {fileName}: {config.holes.Count} hole(s)");
+                results.Add((fileName, config));
+            }
+
+            return results;
+        }
+
+        //blank config for broken JSON files
+        private static BundleConfig MakePlaceholderConfig(string bundleFileName)
+        {
+            return new BundleConfig
+            {
+                holes = new List<HoleConfig>()
+                {
+                    new HoleConfig
+                    {
+                        sceneName = bundleFileName,
+                        holeName = $"[{bundleFileName}]",
+                        par = 4,
+                        difficulty = "None"
+                    }
+                }
+            };
+        }
+    }
+
+    //JSON file
+    [Serializable]
+    public class HoleConfig
+    {
+        public string sceneName; //Has to match unity
+        public string holeName = "No name given"; //display name in game
+        public int par = 4;
+        public string difficulty = "None"; // "Beginner", "Intermediate", "Expert", "None"
+        public bool enabled = true; //show in the game
+
+    }
+
+    //Also JSON file
+    [Serializable]
+    public class BundleConfig
+    {
+        public List<HoleConfig> holes = new List<HoleConfig>();
     }
 
 }
