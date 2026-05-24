@@ -62,9 +62,9 @@ namespace CustomMaps
             var mutable = new Dictionary<string, string>(__result);
 
             // Add custom scenes
-            for(int i = 0; i < Plugin.ScenePaths.Count; i++)
+            foreach (var entry in Plugin.LoadedBundles.Where(b => b.IsSceneBundle))
             {
-                mutable[Plugin.SceneGuids[i]] = Plugin.ScenePaths[i];
+                mutable[entry.SceneGuid] = entry.ScenePath;
             }
             
             //return new dictionary
@@ -113,7 +113,7 @@ namespace CustomMaps
         //Grabs the microsplat terrain shaders
         public static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
         {
-            bool isCustomScene = Plugin.ScenePaths.Any(p => p.Contains(scene.name));
+            bool isCustomScene = Plugin.LoadedBundles.Any(b => b.IsSceneBundle && b.ScenePath.Contains(scene.name));
             bool isDrivingRange = scene.name.Equals("Driving range");
             Plugin.Log.LogDebug("Scene Loaded: " + scene.name);
 
@@ -125,7 +125,7 @@ namespace CustomMaps
                     CachePostProcessing();
                     CacheMicroSplat();
                 }
-                
+
                 //Vanilla level
                 CacheText();
                 CacheMaterials();
@@ -140,7 +140,6 @@ namespace CustomMaps
                 SetSkybox();
             }
         }
-
 
         public static void CachePostProcessing()
         {
@@ -246,7 +245,7 @@ namespace CustomMaps
         public static void SetShaders()
         {
             // Fix broken shaders on all renderers in custom scene
-            var customRenderers = GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+            var customRenderers = GameObject.FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var renderer in customRenderers)
             {
                 foreach (var mat in renderer.sharedMaterials)
@@ -300,7 +299,7 @@ namespace CustomMaps
         {
             // Only inject in custom scenes
             string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (!Plugin.ScenePaths.Any(p => p.Contains(activeScene))) return;
+            if (!Plugin.LoadedBundles.Any(b => b.IsSceneBundle && b.ScenePath.Contains(activeScene))) return;
 
             if (Plugin.CachedPropData == null) return;
 
