@@ -33,17 +33,29 @@ namespace CustomMaps
         public static object? CachedTemplateMaterial = null;
         public static Dictionary<string, Material> CachedMaterials = new Dictionary<string, Material>();
         public static Dictionary<string, Shader> CachedShaders = new Dictionary<string, Shader>();
+        public static Shader GlowShader { get; set; }
 
         //for loading custom scenes
-        public static List<string> ScenePaths = new List<string>();
-        public static List<string> SceneGuids = new List<string>();
+        public static Dictionary<string, string> SceneNameToGuid = new Dictionary<string, string>();
+        public static Dictionary<string, string> SceneBundles = new Dictionary<string, string>();
+
+        public struct LoadedBundle
+        {
+            public AssetBundle Bundle;
+            public string ScenePath; // null if asset bundle
+            public string SceneGuid; // null if asset bundle
+            public bool IsSceneBundle => ScenePath != null;
+        }
+
+        public static List<LoadedBundle> LoadedBundles = new List<LoadedBundle>();
         
+
 
         private void Awake()
         {
             Instance = this;
             Log = Logger;
-            AssetImports.LoadScenes();
+            AssetImports.LoadBundles();
 
             var harmony = new Harmony("com.github.MasterBuilderMAC.SBGMaps");
 
