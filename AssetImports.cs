@@ -109,7 +109,6 @@ namespace CustomMaps
         {
             string mapsFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Maps");
             var results = new List<(string, BundleConfig?)>();
-
             var bundlePaths = Directory.GetFiles(mapsFolder)
                 .Concat(Directory.GetDirectories(mapsFolder)
                     .SelectMany(subDir => Directory.GetFiles(subDir)))
@@ -120,14 +119,28 @@ namespace CustomMaps
                 string fileName = Path.GetFileName(bundlePath);
                 string configPath = bundlePath + ".json";
 
+                //No file
                 if (!File.Exists(configPath))
                 {
-                    Plugin.Log.LogWarning($"No config found for bundle: {fileName}");
+                    Plugin.Log.LogWarning($"No config found for bundle: {fileName}, using filler");
                     results.Add((fileName, null));
                     continue;
                 }
 
-                string json = File.ReadAllText(configPath, Encoding.UTF8).TrimStart('\uFEFF');
+                //File failed to read
+                string json;
+                try
+                {
+                    json = File.ReadAllText(configPath, Encoding.UTF8).TrimStart('\uFEFF');
+                }
+                catch (Exception e)
+                {
+                    Plugin.Log.LogError($"Failed to read config file for {fileName}: {e.Message}, using filler");
+                    results.Add((fileName, null));
+                    continue;
+                }
+
+                //File failed to parse
                 BundleConfig config;
                 try
                 {
@@ -135,41 +148,25 @@ namespace CustomMaps
                 }
                 catch (Exception e)
                 {
-                    Plugin.Log.LogError($"Failed to parse config for {fileName}: {e.Message}, using placeholder");
-                    results.Add((fileName, MakePlaceholderConfig(fileName)));
+                    Plugin.Log.LogError($"Failed to parse config for {fileName}: {e.Message}, using filler");
+                    results.Add((fileName, null));
                     continue;
                 }
 
-                if (config?.holes.Count == null || config.holes.Count == 0)
+                //No/null holes in file
+                if (config?.holes == null || config.holes.Count == 0)
                 {
-                    Plugin.Log.LogWarning($"No holes defined in config for {fileName}, using placeholder");
-                    results.Add((fileName, MakePlaceholderConfig(fileName)));
+                    Plugin.Log.LogWarning($"No holes defined in config for {fileName}, using filler");
+                    results.Add((fileName, null));
                     continue;
                 }
 
-                Plugin.Log.LogDebug($"Loaded config for {fileName}: {config.holes.Count} hole(s)");
+                //Add holes to list
+                Plugin.Log.LogDebug($"Loaded config for {fileName}: {config.holes.Count} enabled hole(s)");
                 results.Add((fileName, config));
             }
 
             return results;
-        }
-
-        //blank config for broken JSON files
-        private static BundleConfig MakePlaceholderConfig(string bundleFileName)
-        {
-            return new BundleConfig
-            {
-                holes = new List<HoleConfig>()
-                {
-                    new HoleConfig
-                    {
-                        sceneName = bundleFileName,
-                        holeName = $"[{bundleFileName}]",
-                        par = 4,
-                        difficulty = "None"
-                    }
-                }
-            };
         }
     }
 
