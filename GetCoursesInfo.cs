@@ -75,6 +75,7 @@ namespace CustomMaps
 
             foreach (var (bundleFileName, config) in configs)
             {
+
                 // Get all scene guids that belong to this bundle
                 var bundleBaseName = Path.GetFileNameWithoutExtension(bundleFileName);
                 var bundleScenes = Plugin.SceneNameToGuid
@@ -93,6 +94,12 @@ namespace CustomMaps
 
                 foreach (var holeConfig in config.holes)
                 {
+                    //Check if hole is disabled
+                    if(holeConfig.enabled == false)
+                    {
+                        continue;
+                    }
+
                     // Validate scene name
                     if (!Plugin.SceneNameToGuid.TryGetValue(holeConfig.sceneName, out string sceneGuid))
                     {
@@ -100,15 +107,17 @@ namespace CustomMaps
                         // Use first available scene from bundle as fallback
                         var fallback = bundleScenes.FirstOrDefault();
                         if (fallback.Key != null)
-                            allHoles.Add(CreateFillerHole(fallback.Key, fallback.Value, bundleBaseName, courseIcon));
+                            allHoles.Add(CreateFillerHole(fallback.Key, fallback.Value, bundleBaseName, courseIcon, $"SCENE NAME IS WRONG - {holeConfig.holeName}"));
                         continue;
                     }
 
                     // Validate and fill individual fields
                     string holeName = string.IsNullOrEmpty(holeConfig.holeName) ? bundleBaseName : holeConfig.holeName;
 
+                    //default to par 4
                     int par = holeConfig.par > 0 ? holeConfig.par : 4;
 
+                    //default to None difficulty
                     HoleData.DifficultyLevel difficulty;
                     if (!Enum.TryParse(holeConfig.difficulty, out difficulty))
                     {
@@ -139,15 +148,16 @@ namespace CustomMaps
             return allHoles.ToArray();
         }
 
-        static HoleData CreateFillerHole(string sceneName, string sceneGuid, string bundleName, Sprite courseIcon)
+        static HoleData CreateFillerHole(string sceneName, string sceneGuid, string bundleName, Sprite courseIcon, string overrideName = null)
         {
             var holeData = ScriptableObject.CreateInstance<HoleData>();
             var tHole = Traverse.Create(holeData);
+            string displayName = overrideName ?? $"{bundleName}.{sceneName}";
 
             string locKey = $"FILLER_TEMPLATE.{sceneName}";
-            Plugin.CustomLocalizedStrings[locKey] = $"{bundleName}.{sceneName}";
+            Plugin.CustomLocalizedStrings[locKey] = displayName;
             tHole.Property("LocalizedName").SetValue(new LocalizedString("UI", locKey));
-            holeData.name = $"{bundleName}.{sceneName}";
+            holeData.name = displayName;
             tHole.Property("Scene").SetValue(new SceneReference(sceneGuid));
             tHole.Property("Par").SetValue(4);
             tHole.Property("Difficulty").SetValue(HoleData.DifficultyLevel.None);
@@ -156,7 +166,7 @@ namespace CustomMaps
             var musicGuid = new FMOD.GUID { Data1 = -55891042, Data2 = 1301584857, Data3 = 1030450600, Data4 = 1380137089 };
             tHole.Property("MusicEvent").SetValue(new FMODUnity.EventReference { Guid = musicGuid });
 
-            Plugin.Log.LogWarning($"Created filler hole for scene '{sceneName}' from bundle '{bundleName}'");
+            Plugin.Log.LogWarning($"Created filler hole for scene '{sceneName}' from bundle '{bundleName}'. name = {displayName}");
             return holeData;
         }
     }
