@@ -109,10 +109,16 @@ namespace CustomMaps
         {
             string mapsFolder = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Maps");
             var results = new List<(string, BundleConfig?)>();
+            
+            var sceneBundlePaths = new HashSet<string>(
+                Plugin.SceneBundles.Values,
+                StringComparer.OrdinalIgnoreCase
+            );
+            
             var bundlePaths = Directory.GetFiles(mapsFolder)
                 .Concat(Directory.GetDirectories(mapsFolder)
-                    .SelectMany(subDir => Directory.GetFiles(subDir)))
-                .Where(f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
+                .SelectMany(subDir => Directory.GetFiles(subDir)))
+                .Where(f => sceneBundlePaths.Contains(f));
 
             foreach (var bundlePath in bundlePaths)
             {
